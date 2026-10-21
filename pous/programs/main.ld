@@ -6431,6 +6431,22 @@ PROGRAM main
                   "documentation": "",
                   "debug": false
                 }
+              },
+              {
+                "handleId": "Fault_Active",
+                "type": "input",
+                "variable": {
+                  "name": "Fault_Active",
+                  "class": "local",
+                  "type": {
+                    "definition": "base-type",
+                    "value": "BOOL"
+                  },
+                  "location": "%QX0.2",
+                  "initialValue": "0",
+                  "documentation": "",
+                  "debug": false
+                }
               }
             ],
             "draggable": true,
@@ -7155,7 +7171,16 @@ PROGRAM main
             },
             "numericId": "6245865",
             "variable": {
-              "name": ""
+              "name": "Fault_Active",
+              "class": "local",
+              "type": {
+                "definition": "base-type",
+                "value": "BOOL"
+              },
+              "location": "%QX0.2",
+              "initialValue": "0",
+              "documentation": "",
+              "debug": false
             },
             "executionOrder": 0,
             "variant": "input",

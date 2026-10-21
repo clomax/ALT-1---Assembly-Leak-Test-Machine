@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ALT-1 Assembly &amp; Leak Test</title>
+  <meta name="description" content="A simulated special purpose machine that presses a cap onto a valve body and leak tests it, controlled by an IEC 61131-3 program on OpenPLC.">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="#top">ALT-1</a>
+    <nav aria-label="Sections">
+      <a href="#overview">Overview</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#sequence">Sequence</a>
+      <a href="#simulator">Simulator</a>
+      <a href="#testing">Testing</a>
+      <a href="#extensions">Extensions</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="hero">
+    <div class="wrap">
+      <p class="eyebrow">PLC portfolio project</p>
+      <h1>ALT-1 Assembly &amp; Leak Test Machine</h1>
+      <p class="lede">
+        A simulated special purpose machine that presses a cap onto a cast valve body
+        and leak tests the assembly. It is controlled by an IEC 61131-3 program running
+        on the OpenPLC soft PLC, and a plant simulator takes the place of the machine.
+      </p>
+      <p class="actions">
+        <a class="button" href="https://github.com/clomax/ALT-1---Assembly-Leak-Test-Machine">View source on GitHub</a>
+        <a class="button secondary" href="ALT-1-FD-001.pdf">Functional description (.pdf)</a>
+      </p>
+      <figure class="screenshot">
+        <img src="assets/img/panel.png" width="1024" height="662"
+             alt="The ALT-1 plant simulator panel mid-cycle: PLC connected, machine running, part serial 3, cap press extended with the solenoid on, and the event log showing the latest signal changes.">
+        <figcaption>The plant simulator panel, with the PLC running a cycle.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="overview">
+    <div class="wrap">
+      <h2>Overview</h2>
+      <p>
+        The hypothetical product is a small cast aluminium valve body. A cap is pressed onto the body,
+        and the assembly is pressure decay leak tested before it is released.
+      </p>
+      <h3>Stations</h3>
+      <ol class="cards">
+        <li><strong>Load and identify</strong> The operator loads a part and presses Start. The machine assigns a serial number.</li>
+        <li><strong>Cap fit and press</strong> A pneumatic cylinder presses the cap on. Position sensors confirm travel, with a timeout fault.</li>
+        <li><strong>Leak test</strong> The machine runs a test on a leak test instrument and handles pass, fail, timeout and instrument fault.</li>
+        <li><strong>Unload</strong> Good parts would go to the good lane. Failed parts would go to a locked reject bin.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <div class="wrap">
+      <h2>Control system architecture</h2>
+      <figure class="diagram">
+        <div class="diagram-scroll">
+          <svg viewBox="0 0 960 420" role="img" aria-labelledby="arch-title arch-desc">
+            <title id="arch-title">Control system architecture</title>
+            <desc id="arch-desc">The OpenPLC runtime runs a ladder main program, which calls the FB_Sequence function block. The runtime polls the plant simulator over Modbus TCP on localhost port 5020, writing 5 coils and 1 register and reading 9 discrete inputs. The simulator models the machine and is driven from an operator panel or terminal commands through one command queue.</desc>
+            <defs>
+              <marker id="arrowhead" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path class="d-arrowhead" d="M0,0 L10,5 L0,10 z"/>
+              </marker>
+            </defs>
+
+            <!-- Soft PLC -->
+            <rect class="d-zone" x="20" y="20" width="410" height="380" rx="12"/>
+            <text class="d-title" x="40" y="48">Soft PLC · OpenPLC runtime v4</text>
+            <text class="d-muted" x="40" y="68">Docker container, cyclic task every 20 ms</text>
+
+            <rect class="d-box" x="45" y="90" width="360" height="110" rx="8"/>
+            <text class="d-head" x="65" y="116">main <tspan class="d-muted">· Ladder</tspan></text>
+            <text x="65" y="140">Physical I/O, permissives, interlocks</text>
+            <text x="65" y="158">Run control and fault latching</text>
+            <text x="65" y="176">The only layer that drives outputs</text>
+
+            <rect class="d-box" x="45" y="290" width="360" height="100" rx="8"/>
+            <text class="d-head" x="65" y="316">FB_Sequence <tspan class="d-muted">· Structured Text</tspan></text>
+            <text x="65" y="340">Steps 0 to 50, abort to step 90</text>
+            <text x="65" y="358">Sets request bits, never drives outputs</text>
+
+            <line class="d-flow" x1="110" y1="200" x2="110" y2="289" marker-end="url(#arrowhead)"/>
+            <text class="d-code" x="122" y="234">Running</text>
+            <text class="d-code" x="122" y="249">Load_Ready</text>
+            <text class="d-code" x="122" y="264">sensors</text>
+
+            <line class="d-flow" x1="340" y1="290" x2="340" y2="201" marker-end="url(#arrowhead)"/>
+            <text class="d-code" x="328" y="234" text-anchor="end">Req_Press_Extend</text>
+            <text class="d-code" x="328" y="249" text-anchor="end">Leak_Testing</text>
+            <text class="d-code" x="328" y="264" text-anchor="end">Serial</text>
+
+            <!-- Modbus link -->
+            <text class="d-head" x="510" y="70" text-anchor="middle">Modbus TCP</text>
+            <text class="d-muted" x="510" y="88" text-anchor="middle">localhost:5020</text>
+            <text class="d-small" x="510" y="116" text-anchor="middle">5 coils + 1 register</text>
+            <line class="d-flow" x1="405" y1="125" x2="614" y2="125" marker-end="url(#arrowhead)"/>
+            <line class="d-flow" x1="615" y1="160" x2="406" y2="160" marker-end="url(#arrowhead)"/>
+            <text class="d-small" x="510" y="180" text-anchor="middle">9 discrete inputs</text>
+            <text class="d-small d-muted" x="510" y="226" text-anchor="middle">PLC is the client,</text>
+            <text class="d-small d-muted" x="510" y="242" text-anchor="middle">polls every 20–50 ms</text>
+
+            <!-- Plant simulator -->
+            <rect class="d-zone" x="590" y="20" width="350" height="380" rx="12"/>
+            <text class="d-title" x="610" y="48">Plant simulator · <tspan class="d-mono">plant_sim.py</tspan></text>
+            <text class="d-muted" x="610" y="68">Python, standard library only</text>
+
+            <rect class="d-box" x="615" y="90" width="300" height="110" rx="8"/>
+            <text class="d-head" x="635" y="116">Modbus server + machine model</text>
+            <text x="635" y="140">Cap press, 0.4 s travel each way</text>
+            <text x="635" y="158">Push buttons, guard, e-stop</text>
+            <text x="635" y="176">Pallet, part and serial display</text>
+
+            <rect class="d-box" x="615" y="300" width="140" height="90" rx="8"/>
+            <text class="d-head" x="631" y="326">Operator panel</text>
+            <text x="631" y="348">Tkinter window</text>
+            <text x="631" y="366">Fault injection</text>
+
+            <rect class="d-box" x="775" y="300" width="140" height="90" rx="8"/>
+            <text class="d-head" x="791" y="326">Terminal</text>
+            <text x="791" y="348">Text commands</text>
+            <text x="791" y="366">Type <tspan class="d-mono">help</tspan></text>
+
+            <line class="d-flow" x1="685" y1="300" x2="685" y2="201" marker-end="url(#arrowhead)"/>
+            <line class="d-flow" x1="845" y1="300" x2="845" y2="201" marker-end="url(#arrowhead)"/>
+            <text class="d-small d-muted" x="765" y="244" text-anchor="middle">Same commands,</text>
+            <text class="d-small d-muted" x="765" y="260" text-anchor="middle">one queue</text>
+          </svg>
+        </div>
+        <figcaption>The PLC program and the plant simulator run on one PC and talk over Modbus TCP.</figcaption>
+      </figure>
+      <dl class="facts">
+        <dt>Soft PLC</dt><dd>OpenPLC runtime v4 in Docker</dd>
+        <dt>Languages</dt><dd>Ladder (main program), Structured Text (function blocks)</dd>
+        <dt>Scan</dt><dd>Cyclic task, 20 ms</dd>
+        <dt>Plant link</dt><dd>Modbus TCP, localhost:5020, 9 inputs, 5 coils, 1 register</dd>
+      </dl>
+      <h3>Two layers</h3>
+      <p>
+        The ladder layer owns the physical I/O, permissives and interlocks, and is the
+        only layer that drives outputs. The Structured Text sequence only sets request
+        bits. It can ask for the cylinder to extend; the interlock layer decides whether it does.
+      </p>
+      <figure class="diagram ladder">
+        <div class="diagram-scroll">
+          <svg viewBox="14 412 800 290" role="img" aria-labelledby="rung-title rung-desc">
+            <title id="rung-title">Ladder rung calling FB_Sequence</title>
+            <desc id="rung-desc">A ladder rung with a Running contact feeding the FB_Sequence function block. Its inputs are Running, Load_Ready, Part_Present, CapPress_Extended, CapPress_Retracted and Fault_Active. Its Req_Press_Extend output drives the CapPress_Req_Extend coil, and its other outputs go to FB_SEQUENCE.step, Part_Serial and Lamp_LeakTest.</desc>
+            <line class="l-rail" x1="24" y1="448" x2="24" y2="488"/>
+            <line class="l-on" x1="24" y1="468" x2="92" y2="468"/>
+            <path class="l-wire" d="M92,456 V480 M115,456 V480"/>
+            <text text-anchor="middle" x="104" y="441">Running</text>
+            <line class="l-wire" x1="115" y1="468" x2="280" y2="468"/>
+
+            <text class="d-muted" text-anchor="middle" x="388" y="426">FB_SEQUENCE</text>
+            <rect class="l-box" x="280" y="434" width="215" height="258" rx="5"/>
+            <text class="d-head" text-anchor="middle" x="388" y="452">FB_Sequence</text>
+            <text x="288" y="472">Running</text>
+            <text x="288" y="512">Load_Ready</text>
+            <text x="288" y="552">Part_Present</text>
+            <text x="288" y="592">Press_Extended</text>
+            <text x="288" y="632">Press_Retracted</text>
+            <text x="288" y="672">Fault_Active</text>
+            <text text-anchor="end" x="489" y="472">Req_Press_Extend</text>
+            <text text-anchor="end" x="489" y="512">Step</text>
+            <text text-anchor="end" x="489" y="552">Serial</text>
+            <text text-anchor="end" x="489" y="592">Leak_Testing</text>
+
+            <path class="l-wire" d="M254,508 H280 M254,548 H280 M254,588 H280 M254,628 H280 M254,668 H280"/>
+            <text class="d-muted" text-anchor="end" x="250" y="512">Load_Ready</text>
+            <text class="d-muted" text-anchor="end" x="250" y="552">Part_Present</text>
+            <text class="d-muted" text-anchor="end" x="250" y="592">CapPress_Extended</text>
+            <text class="d-muted" text-anchor="end" x="250" y="632">CapPress_Retracted</text>
+            <text class="d-muted" text-anchor="end" x="250" y="672">Fault_Active</text>
+
+            <path class="l-wire" d="M495,508 H522 M495,548 H522 M495,588 H522"/>
+            <text class="d-muted" x="527" y="512">FB_SEQUENCE.step</text>
+            <text class="d-muted" x="527" y="552">Part_Serial</text>
+            <text class="d-muted" x="527" y="592">Lamp_LeakTest</text>
+
+            <line class="l-wire" x1="495" y1="468" x2="667.5" y2="468"/>
+            <path class="l-wire" d="M672,456 Q663,468 672,480 M680,456 Q689,468 680,480"/>
+            <text text-anchor="middle" x="676" y="441">CapPress_Req_Extend</text>
+            <line class="l-wire" x1="684.5" y1="468" x2="800" y2="468"/>
+            <line class="l-rail" x1="800" y1="448" x2="800" y2="488"/>
+          </svg>
+        </div>
+        <figcaption>Rung 6 of the ladder program. The sequence's extend request goes to <code>CapPress_Req_Extend</code>, not to the solenoid; rung 7 turns it into <code>CapPress_Extend</code> only while the machine is running.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="sequence">
+    <div class="wrap">
+      <h2>Machine sequence</h2>
+      <div class="sequence-layout">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Step</th><th>Name</th><th>Moves on when</th></tr></thead>
+            <tbody>
+              <tr><td>0</td><td>Idle</td><td>Part loaded and machine running</td></tr>
+              <tr><td>10</td><td>Press extend</td><td>Press extended</td></tr>
+              <tr><td>20</td><td>Press dwell</td><td>500 ms dwell done</td></tr>
+              <tr><td>30</td><td>Press retract</td><td>Press retracted</td></tr>
+              <tr><td>40</td><td>Leak test (stub)</td><td>3 s stub timer done</td></tr>
+              <tr><td>50</td><td>Unload</td><td>Part removed</td></tr>
+              <tr><td>90</td><td>Aborted</td><td>Part removed and no fault active</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <figure class="diagram sequence-diagram">
+          <div class="diagram-scroll">
+            <svg viewBox="0 0 440 484" role="img" aria-labelledby="seq-title seq-desc">
+              <title id="seq-title">Machine sequence flow</title>
+              <desc id="seq-desc">Step 0 Idle goes to step 10 Press extend when a part is loaded, assigning a serial number. Step 10 goes to 20 Press dwell when the press is extended, 20 to 30 Press retract after 500 ms, 30 to 40 Leak test when the press is retracted, and 40 to 50 Unload after 3 s. Step 50 returns to 0 when the part is removed. Stopping the machine during steps 10 to 40 goes to step 90 Aborted, which returns to 0 once the part is removed and no fault is active.</desc>
+              <defs>
+                <marker id="seq-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path class="d-arrowhead" d="M0,0 L10,5 L0,10 z"/>
+                </marker>
+                <marker id="seq-arrow-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path class="d-arrowhead-muted" d="M0,0 L10,5 L0,10 z"/>
+                </marker>
+              </defs>
+
+              <!-- Normal cycle -->
+              <rect class="d-box" x="50" y="20" width="180" height="44" rx="8"/>
+              <text class="d-head" x="66" y="47"><tspan class="d-mono d-muted">0</tspan><tspan dx="8">Idle</tspan></text>
+              <line class="d-flow" x1="140" y1="64" x2="140" y2="99" marker-end="url(#seq-arrow)"/>
+              <text class="d-small" x="148" y="86">Load_Ready, serial +1</text>
+
+              <rect class="d-box" x="50" y="100" width="180" height="44" rx="8"/>
+              <text class="d-head" x="66" y="127"><tspan class="d-mono d-muted">10</tspan><tspan dx="8">Press extend</tspan></text>
+              <line class="d-flow" x1="140" y1="144" x2="140" y2="179" marker-end="url(#seq-arrow)"/>
+              <text class="d-small" x="148" y="166">Press extended</text>
+
+              <rect class="d-box" x="50" y="180" width="180" height="44" rx="8"/>
+              <text class="d-head" x="66" y="207"><tspan class="d-mono d-muted">20</tspan><tspan dx="8">Press dwell</tspan></text>
+              <line class="d-flow" x1="140" y1="224" x2="140" y2="259" marker-end="url(#seq-arrow)"/>
+              <text class="d-small" x="148" y="246">500 ms dwell</text>
+
+              <rect class="d-box" x="50" y="260" width="180" height="44" rx="8"/>
+              <text class="d-head" x="66" y="287"><tspan class="d-mono d-muted">30</tspan><tspan dx="8">Press retract</tspan></text>
+              <line class="d-flow" x1="140" y1="304" x2="140" y2="339" marker-end="url(#seq-arrow)"/>
+              <text class="d-small" x="148" y="326">Press retracted</text>
+
+              <rect class="d-box" x="50" y="340" width="180" height="44" rx="8"/>
+              <text class="d-head" x="66" y="367"><tspan class="d-mono d-muted">40</tspan><tspan dx="8">Leak test (stub)</tspan></text>
+              <line class="d-flow" x1="140" y1="384" x2="140" y2="419" marker-end="url(#seq-arrow)"/>
+              <text class="d-small" x="148" y="406">3 s stub timer</text>
+
+              <rect class="d-box" x="50" y="420" width="180" height="44" rx="8"/>
+              <text class="d-head" x="66" y="447"><tspan class="d-mono d-muted">50</tspan><tspan dx="8">Unload</tspan></text>
+
+              <path class="d-flow" d="M50,442 H24 V42 H49" fill="none" marker-end="url(#seq-arrow)"/>
+              <text class="d-small" x="14" y="242" text-anchor="middle" transform="rotate(-90 14 242)">Part removed, next part</text>
+
+              <!-- Abort -->
+              <path class="d-flow-muted" d="M230,122 H250 M230,202 H250 M230,282 H250 M230,362 H250 M250,122 V362" fill="none"/>
+              <line class="d-flow-muted" x1="250" y1="242" x2="289" y2="242" marker-end="url(#seq-arrow-muted)"/>
+              <text class="d-small d-muted" x="255" y="233">Stop</text>
+
+              <rect class="d-box d-box-alt" x="290" y="220" width="110" height="44" rx="8"/>
+              <text class="d-head" x="306" y="247"><tspan class="d-mono d-muted">90</tspan><tspan dx="8">Aborted</tspan></text>
+
+              <path class="d-flow-muted" d="M345,220 V42 H231" fill="none" marker-end="url(#seq-arrow-muted)"/>
+              <text class="d-small d-muted" x="353" y="130">Part removed</text>
+              <text class="d-small d-muted" x="353" y="146">and no fault</text>
+            </svg>
+          </div>
+          <figcaption>The normal cycle runs down the left. Stopping during steps 10 to 40 aborts the part.</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section id="simulator">
+    <div class="wrap">
+      <h2>Plant simulator</h2>
+      <p>
+        <!-- TODO: describe the panel areas and how to run it -->
+        <code>plant_sim.py</code> pretends to be the machine. It is a Modbus TCP server
+        written in standard-library Python, with an operator panel and a terminal command
+        line. It also injects faults, such as a jammed press, a slow press or a stuck sensor.
+      </p>
+      <pre><code>python3 sim/plant_sim.py
+python3 sim/plant_sim.py --no-gui --port 5020 --travel 0.4</code></pre>
+      <!-- TODO: screenshot or short GIF of a full cycle -->
+      <figure class="screenshot">
+        <video src="assets/vid/panel.mp4" poster="assets/img/panel.png" width="1024" height="662"
+               autoplay loop muted playsinline
+               aria-label="The ALT-1 plant simulator panel while the PLC runs a cycle: the cap press extends and retracts, the status lamps change, and the event log records each signal.">
+          <a href="assets/vid/panel.mp4">Download the simulator video (MP4)</a>
+        </video>
+        <figcaption>The plant simulator panel while the PLC runs a machine cycle.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <section id="testing">
+    <div class="wrap">
+      <h2>Factory acceptance test</h2>
+      <p>
+        The functional description defines 30 tests, FAT-01 to FAT-30, each with an action and
+        an expected result. They were run by hand against the plant simulator, driving the
+        machine from its operator panel and checking how the PLC responded. Faults that would be
+        hard to create on demand, such as a jammed press, a slow press or a stuck position sensor,
+        were created with the simulator's fault injection.
+      </p>
+      <figure class="screenshot">
+        <img src="assets/img/panel_fault.png" width="1021" height="654" loading="lazy"
+             alt="The plant simulator panel with the Press jammed fault injected. The event log shows CapPress_Extend switching on, then Lamp_Running and CapPress_Extend switching off and Lamp_Fault switching on. The Fault and Reset available lamps are lit and the Reset button is enabled.">
+        <figcaption>A cap press extend timeout created with fault injection. With the press jammed, the extend request times out, the machine stops and the fault latches.</figcaption>
+      </figure>
+
+      <h3>What the tests cover</h3>
+      <div class="table-scroll">
+        <table class="test-coverage">
+          <thead><tr><th>Group</th><th>Tests</th><th>What they prove</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>Run control</td><td>FAT-01 to 10</td>
+              <td>Start seals in; Stop, an open guard or the e-stop stops the machine; the machine doesn't restart until Start is pressed again.</td>
+            </tr>
+            <tr>
+              <td>Cap press</td><td>FAT-11 to 18</td>
+              <td>Extend and retract timeouts and sensor conflicts latch a fault; reset is disabled until the press is home; a press not home at power-up is caught.</td>
+            </tr>
+            <tr>
+              <td>Machine sequence</td><td>FAT-19 to 25</td>
+              <td>A full cycle runs step by step, each part gets a new serial number, stopping mid-cycle aborts the part.</td>
+            </tr>
+            <tr>
+              <td>Status outputs</td><td>FAT-26 to 30</td>
+              <td>The fault, reset and leak test lamps show the true state, and the serial number reaches the panel.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>What testing found</h3>
+      <p>
+        Through testing I discovered that a part could be taken off the pallet during the leak test without
+        any fault being shown, so an untested part could leave the machine unnoticed. As a fix,
+        the PLC now drives a leak test lamp, <code>Lamp_LeakTest</code>, during step 40, and the
+        Unload function is disabled while a leak test is being conducted. FAT-28 checks both.
+      </p>
+    </div>
+  </section>
+
+  <section id="extensions">
+    <div class="wrap">
+      <h2>Extensions</h2>
+      <ul>
+        <li>Simulated leak test instrument protocol and fault cases</li>
+        <li>Recipe handling for product variants</li>
+        <li>Separate load and press stations with pallet transfer</li>
+        <li>Visual inspection and supervisory HMI with OEE reporting</li>
+        <li>Automated test harness with chaos simulation</li>
+      </ul>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p>ALT-1 by Craig Lomax</p>
+  </div>
+</footer>
+
+</body>
+</html>
