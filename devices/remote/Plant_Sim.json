@@ -87,7 +87,7 @@
         "functionCode": "15",
         "cycleTime": 100,
         "offset": "0",
-        "length": 4,
+        "length": 5,
         "errorHandling": "set-to-zero",
         "ioPoints": [
           {
@@ -117,6 +117,13 @@
             "type": "Digital Output (Multiple Coils)",
             "iecLocation": "%QX0.3",
             "alias": "Reset"
+          },
+          {
+            "id": "Outputs_4",
+            "name": "Outputs_4",
+            "type": "Digital Output (Multiple Coils)",
+            "iecLocation": "%QX0.4",
+            "alias": "Lamp_LeakTest"
           }
         ]
       },

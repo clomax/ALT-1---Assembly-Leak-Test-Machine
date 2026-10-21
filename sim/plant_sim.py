@@ -51,9 +51,12 @@ COIL_NAMES = [              # coils, written by the PLC
     "Lamp_Running",         # 0  %QX0.0
     "CapPress_Extend",      # 1  %QX0.1
     "Lamp_Fault",           # 2  %QX0.2  any fault active
-    "Lamp_Reset",           # 3  %qx0.3  a fault is active and can be reset
-    "Part_Serial",          # 4  %qx0.4  serial number of current part
+    "Lamp_Reset",           # 3  %QX0.3  a fault is active and can be reset
+    "Lamp_LeakTest",        # 4  %QX0.4  leak test in progress (sequence step 40)
 ]
+# Holding registers, written by the PLC (16 bits each)
+#   0  %QW0  Part_Serial_Out  (low 16 bits of the part serial number)
+#   1  %QW1  high 16 bits, optional: leave unwritten for a 16-bit serial
 TABLE_SIZE = 64             # spare addresses so a larger poll doesn't error
 
 BUTTONS = {"start": "Start_PB", "stop": "Stop_PB", "reset": "Reset_PB"}
@@ -278,7 +281,7 @@ HELP = """Commands:
   estop | release            press / release the emergency stop
   open | close               open / close the guard door
   load | unload              put a part on the pallet / take it off
-  nopallet | pallet          remove / return the pallet at the load station
+  nopallet | pallet          remove the pallet (and any part on it) / return an empty pallet
   jam | unjam                cap press stops moving
   slow | normal              cap press travel 3 s (beyond the 2 s timeout)
   stuck ext|ret [on|off]     a press position sensor stuck on ('stuck off' clears both)
@@ -301,7 +304,7 @@ def apply_command(plant, line):
         "close": lambda: setattr(p, "guard_closed", True),
         "load": lambda: (setattr(p, "pallet", True), setattr(p, "part", True)),
         "unload": lambda: setattr(p, "part", False),
-        "nopallet": lambda: setattr(p, "pallet", False),
+        "nopallet": lambda: (setattr(p, "pallet", False), setattr(p, "part", False)),   # part goes with it
         "pallet": lambda: setattr(p, "pallet", True),
         "jam": lambda: setattr(p, "jam", True),
         "unjam": lambda: setattr(p, "jam", False),
@@ -358,7 +361,8 @@ async def plant_loop(plant, period=0.01):
         snap = plant.snapshot()
         for name, val in snap.items():
             if val != prev[name]:
-                log(f"{name:20s} {'ON' if val else 'off'}")
+                shown = ("ON" if val else "off") if isinstance(val, bool) else f"= {val}"
+                log(f"{name:20s} {shown}")
         prev = snap
 
 
@@ -460,7 +464,9 @@ class Panel:
         self.log_queue = add_listener()
         self.held = set()
         self.reset_enabled = None
+        self.leak_locked = None
         self.press_drawn = None
+        self.guard_drawn = None
         root.title("ALT-1 Plant Simulator")
         root.configure(bg=BG)
         root.protocol("WM_DELETE_WINDOW", self.close)
@@ -518,23 +524,26 @@ class Panel:
         left = tk.Frame(mc, bg=PANEL)
         left.pack(side="left", padx=(10, 0), pady=8, anchor="n")
         tk.Label(left, text="Guard door", bg=PANEL, font=BOLD).grid(row=0, column=0, sticky="w")
-        self.guard_var = tk.StringVar(value="close")
-        for col, (txt, val) in enumerate((("Closed", "close"), ("Open", "open")), start=1):
-            ttk.Radiobutton(left, text=txt, variable=self.guard_var, value=val,
-                            command=lambda: self.send(self.guard_var.get())).grid(row=0, column=col, padx=2, sticky="w")
+        self.close_guard_btn = tk.Button(left, text="Close guard", font=FONT, width=9,
+                                         command=lambda: self.send("close"))
+        self.close_guard_btn.grid(row=0, column=1, padx=4)
+        self.open_guard_btn = tk.Button(left, text="Open guard", font=FONT, width=9,
+                                        command=lambda: self.send("open"))
+        self.open_guard_btn.grid(row=0, column=2, padx=4)
         tk.Label(left, text="Part", bg=PANEL, font=BOLD).grid(row=1, column=0, sticky="w", pady=8)
-        tk.Button(left, text="Load part", font=FONT, width=9, command=lambda: self.send("load")).grid(row=1, column=1, padx=4)
-        tk.Button(left, text="Unload part", font=FONT, width=9, command=lambda: self.send("unload")).grid(row=1, column=2, padx=4)
+        self.load_btn = tk.Button(left, text="Load part", font=FONT, width=9, command=lambda: self.send("load"))
+        self.load_btn.grid(row=1, column=1, padx=4)
+        self.unload_btn = tk.Button(left, text="Unload part", font=FONT, width=9, command=lambda: self.send("unload"))
+        self.unload_btn.grid(row=1, column=2, padx=4)
+        tk.Label(left, text="Pallet loaded", bg=PANEL, font=BOLD).grid(row=2, column=0, sticky="w")
         self.pallet_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(left, text="Pallet at load station", variable=self.pallet_var,
-                        command=lambda: self.send("pallet" if self.pallet_var.get() else "nopallet")
-                        ).grid(row=2, column=0, columnspan=3, sticky="w")
+        self.pallet_check = ttk.Checkbutton(left, variable=self.pallet_var,
+                                            command=lambda: self.send("pallet" if self.pallet_var.get() else "nopallet"))
+        self.pallet_check.grid(row=2, column=1, padx=4, sticky="w")
 
         tk.Label(left, text="Part serial", bg=PANEL, font=BOLD).grid(row=3, column=0, sticky="w", pady=(8, 0))
         self.serial_label = tk.Label(left, text="~", bg="#1e2327", fg=AMBER, font=BOLD_MONO, width=8, anchor="e", padx=6)
-        self.serial_label.grid(row=3, column=1, sticky="w", pady=(8, 0))
-        tk.Label(left, text="from PLC (%QW0)", bg=PANEL, fg="#90a4ae", font=TINY_MONO).grid(
-            row=3, column=2, sticky="w", pady=(8, 0))
+        self.serial_label.grid(row=3, column=1, sticky="w", padx=4, pady=(8, 0))
 
 
         lamps = tk.Frame(mc, bg=PANEL)
@@ -553,7 +562,6 @@ class Panel:
         self.press_canvas.pack(side="left", padx=8, pady=6)
         pc = self.press_canvas
         pc.create_rectangle(80, 8, 150, 60, fill="#90a4ae", outline="#37474f", width=2)
-        pc.create_rectangle(70, 130, 160, 142, fill="#8d6e63", outline="#4e342e")
         pc.create_rectangle(190, 10, 210, 140, outline="#455a64")
         pc.create_text(228, 12, text="DOWN", font=("DejaVu Sans", 7), fill="#607d8b")
         pc.create_text(228, 138, text="HOME", font=("DejaVu Sans", 7), fill="#607d8b")
@@ -575,12 +583,13 @@ class Panel:
         pof.pack(pady=6)
         for label, sig, colour in (("Running", "Lamp_Running", GREEN),
                                    ("Fault", "Lamp_Fault", RED),
-                                   ("Reset available", "Lamp_Reset", BLUE)):
+                                   ("Reset available", "Lamp_Reset", BLUE),
+                                   ("Leak testing", "Lamp_LeakTest", AMBER)):
             lamp = Lamp(pof, label, sig, colour, 28)
             lamp.frame.pack(side="left", padx=14)
             self.lamps[sig] = lamp
 
-        fi = ttk.LabelFrame(right, text="Fault injection  (test only, not part of the machine)")
+        fi = ttk.LabelFrame(right, text="Fault injection")
         fi.pack(fill="x", pady=(8, 0))
         stripe = tk.Canvas(fi, height=6, bg=PANEL, highlightthickness=0)
         stripe.pack(fill="x")
@@ -660,15 +669,23 @@ class Panel:
                 self._release("reset")
             self.reset_enabled = enabled
 
+        # the leak test head clamps the part: it can't be lifted off mid-test
+        testing = snap["Lamp_LeakTest"]
+        if testing != self.leak_locked:
+            state = "disabled" if testing else "normal"
+            self.unload_btn.configure(state=state)
+            self.pallet_check.configure(state=state)
+            self.leak_locked = testing
+
         # e-stop appearance
         pressed = not p.estop_ok
         self.estop.itemconfigure(self.estop_head, fill="#7f0000" if pressed else "#d50000")
         self.estop.itemconfigure(self.estop_text, text="PRESSED" if pressed else "E-STOP")
 
         # keep controls in step with commands typed in the terminal
-        guard = "close" if p.guard_closed else "open"
-        if self.guard_var.get() != guard:
-            self.guard_var.set(guard)
+        if self.guard_drawn != p.guard_closed:          # guard changed: update buttons once
+            self.close_guard_btn.configure(state="disabled" if p.guard_closed else "normal")
+            self.open_guard_btn.configure(state="normal" if p.guard_closed else "disabled")
         if self.pallet_var.get() != p.pallet:
             self.pallet_var.set(p.pallet)
         for attr, var in self.fault_vars.items():
@@ -678,18 +695,21 @@ class Panel:
         self.serial_label.configure(text=str(self.plant.serial()))
 
         self._draw_press(p.press_pos)
+        self._draw_guard(p.guard_closed)
         self._update_link()
         self._drain_log()
         self.root.after(50, self.poll)
 
     def _draw_press(self, pos):
         pos = round(pos, 2)
-        key = (pos, self.plant.part)
+        key = (pos, self.plant.part, self.plant.pallet)
         if key == self.press_drawn:
             return
         self.press_drawn = key
         pc = self.press_canvas
         pc.delete("dyn")
+        if self.plant.pallet:
+            pc.create_rectangle(70, 130, 160, 142, fill="#8d6e63", outline="#4e342e", tags="dyn")
         rod_end = 60 + 58 * pos
         pc.create_rectangle(108, 60, 122, rod_end, fill="#cfd8dc", outline="#37474f", tags="dyn")
         pc.create_rectangle(92, rod_end, 138, rod_end + 10, fill="#546e7a", outline="#263238", tags="dyn")
@@ -697,6 +717,28 @@ class Panel:
             pc.create_rectangle(98, 118, 132, 130, fill="#b0bec5", outline="#455a64", tags="dyn")
         pc.create_rectangle(191, 11 + 128 * (1 - pos), 209, 139, fill=AMBER, outline="", tags="dyn")
         pc.create_text(200, 146, text=f"{int(pos * 100)}%", font=SMALL, tags="dyn")
+        pc.tag_raise("guard")               # keep the guard in front of the moving parts
+
+    def _draw_guard(self, closed):
+        """Clear polycarbonate guard, hinged on the left, in front of the press."""
+        if closed == self.guard_drawn:
+            return
+        self.guard_drawn = closed
+        pc = self.press_canvas
+        pc.delete("guard")
+        if closed:
+            pc.create_rectangle(62, 4, 168, 146, fill="#90caf9", stipple="gray25", outline="", tags="guard")
+            pc.create_rectangle(62, 4, 168, 146, outline="#455a64", width=3, tags="guard")
+            pc.create_rectangle(158, 62, 164, 88, fill="#37474f", outline="", tags="guard")   # handle
+        else:
+            door = (62, 4, 30, 20, 30, 130, 62, 146)                                        # swung open
+            pc.create_polygon(*door, fill="#90caf9", stipple="gray25", outline="", tags="guard")
+            pc.create_polygon(*door, fill="", outline="#455a64", width=3, tags="guard")
+            pc.create_text(47, 75, text="GUARD OPEN", angle=90, fill=RED,
+                           font=("DejaVu Sans", 8, "bold"), tags="guard")
+        for y in (22, 116):                                                                  # hinges
+            pc.create_rectangle(59, y, 65, y + 12, fill="#37474f", outline="", tags="guard")
+        pc.tag_raise("guard")
 
     def _update_link(self):
         link = self.plant.link

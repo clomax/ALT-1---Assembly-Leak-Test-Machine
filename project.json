@@ -37,7 +37,7 @@
           "Part_Serial_Out",
           "CapPress_Extend",
           "CapPress_Req_Extend",
-          "FB_SEQUENCE"
+          "Sequence"
         ]
       }
     }
