@@ -1,0 +1,143 @@
+{
+  "name": "Plant_Sim",
+  "protocol": "modbus-tcp",
+  "modbusTcpConfig": {
+    "host": "127.0.0.1",
+    "port": 5020,
+    "timeout": 1000,
+    "slaveId": 1,
+    "ioGroups": [
+      {
+        "id": "5576af75-6d45-47e6-83c4-e2ede283c7e4",
+        "name": "Inputs",
+        "functionCode": "2",
+        "cycleTime": 100,
+        "offset": "0",
+        "length": 9,
+        "errorHandling": "keep-last-value",
+        "ioPoints": [
+          {
+            "id": "Inputs_0",
+            "name": "Inputs_0",
+            "type": "Digital Input (Discrete Input)",
+            "iecLocation": "%IX0.0",
+            "alias": "Estop_OK"
+          },
+          {
+            "id": "Inputs_1",
+            "name": "Inputs_1",
+            "type": "Digital Input (Discrete Input)",
+            "iecLocation": "%IX0.1",
+            "alias": "Guard_Closed"
+          },
+          {
+            "id": "Inputs_2",
+            "name": "Inputs_2",
+            "type": "Digital Input (Discrete Input)",
+            "iecLocation": "%IX0.2",
+            "alias": "Start_PB"
+          },
+          {
+            "id": "Inputs_3",
+            "name": "Inputs_3",
+            "type": "Digital Input (Discrete Input)",
+            "iecLocation": "%IX0.3",
+            "alias": "Stop_PB"
+          },
+          {
+            "id": "Inputs_4",
+            "name": "Inputs_4",
+            "type": "Digital Input (Discrete Input)",
+            "iecLocation": "%IX0.4",
+            "alias": "Pallet_At_Load"
+          },
+          {
+            "id": "Inputs_5",
+            "name": "Inputs_5",
+            "type": "Digital Input (Discrete Input)",
+            "iecLocation": "%IX0.5",
+            "alias": "Reset_PB"
+          },
+          {
+            "id": "Inputs_6",
+            "name": "Inputs_6",
+            "type": "Digital Input (Discrete Input)",
+            "iecLocation": "%IX0.6",
+            "alias": "Part_Present"
+          },
+          {
+            "id": "Inputs_7",
+            "name": "Inputs_7",
+            "type": "Digital Input (Discrete Input)",
+            "iecLocation": "%IX0.7",
+            "alias": "CapPress_Extended"
+          },
+          {
+            "id": "Inputs_8",
+            "name": "Inputs_8",
+            "type": "Digital Input (Discrete Input)",
+            "iecLocation": "%IX1.0",
+            "alias": "CapPress_Retracted"
+          }
+        ]
+      },
+      {
+        "id": "55b8e0d9-8220-4dd8-acce-e107bf48f918",
+        "name": "Outputs",
+        "functionCode": "15",
+        "cycleTime": 100,
+        "offset": "0",
+        "length": 4,
+        "errorHandling": "set-to-zero",
+        "ioPoints": [
+          {
+            "id": "Outputs_0",
+            "name": "Outputs_0",
+            "type": "Digital Output (Multiple Coils)",
+            "iecLocation": "%QX0.0",
+            "alias": "Lamp_Running"
+          },
+          {
+            "id": "Outputs_1",
+            "name": "Outputs_1",
+            "type": "Digital Output (Multiple Coils)",
+            "iecLocation": "%QX0.1",
+            "alias": "CapPress_Extend"
+          },
+          {
+            "id": "Outputs_2",
+            "name": "Outputs_2",
+            "type": "Digital Output (Multiple Coils)",
+            "iecLocation": "%QX0.2",
+            "alias": "Fault_Active"
+          },
+          {
+            "id": "Outputs_3",
+            "name": "Outputs_3",
+            "type": "Digital Output (Multiple Coils)",
+            "iecLocation": "%QX0.3",
+            "alias": "Reset"
+          }
+        ]
+      },
+      {
+        "id": "56b4ff1f-c7ac-46ac-8204-c3fa8913c001",
+        "name": "Quant Outputs",
+        "functionCode": "16",
+        "cycleTime": 100,
+        "offset": "0",
+        "length": 1,
+        "errorHandling": "keep-last-value",
+        "ioPoints": [
+          {
+            "id": "Quant Outputs_0",
+            "name": "Quant Outputs_0",
+            "type": "Analog Output (Multiple Registers)",
+            "iecLocation": "%QW0",
+            "alias": "Part_Serial_Out"
+          }
+        ]
+      }
+    ]
+  }
+}
